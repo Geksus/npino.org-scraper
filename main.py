@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
-import csv
+from lxml import etree
 
 from bs4 import BeautifulSoup
 import requests
@@ -63,11 +63,13 @@ headers = [
     },
 ]
 
+
 def types_of_facilities():
     """Return a list of all types of facilities."""
     soup = BeautifulSoup(
         session.get(
-            "https://www.npino.org/organization/nursing-custodial-care-facilities", headers=random.choice(headers)
+            "https://www.npino.org/organization/nursing-custodial-care-facilities",
+            headers=random.choice(headers),
         ).text,
         "html.parser",
     )
@@ -77,7 +79,9 @@ def types_of_facilities():
 
 def get_states_by_type(url):
     """Return a list of all states."""
-    soup = BeautifulSoup(session.get(url, headers=random.choice(headers)).text, "html.parser")
+    soup = BeautifulSoup(
+        session.get(url, headers=random.choice(headers)).text, "html.parser"
+    )
     states = soup.find("div", id="state-filter-container").find_all("a")
     if len(state_codes) == 0:
         state_codes.extend([c.text for c in soup.find_all("span", class_="code")])
@@ -86,7 +90,9 @@ def get_states_by_type(url):
 
 def get_pagination(url):
     """Return pagination."""
-    soup = BeautifulSoup(session.get(url, headers=random.choice(headers)).text, "html.parser")
+    soup = BeautifulSoup(
+        session.get(url, headers=random.choice(headers)).text, "html.parser"
+    )
     return (
         int(soup.find("li", class_="last").find("a")["href"][-1])
         if soup.find("ul", class_="pagination")
@@ -96,7 +102,9 @@ def get_pagination(url):
 
 def get_facilities_urls(url):
     """Return a list of all facilities on a given page."""
-    soup = BeautifulSoup(session.get(url, headers=random.choice(headers)).text, "html.parser")
+    soup = BeautifulSoup(
+        session.get(url, headers=random.choice(headers)).text, "html.parser"
+    )
     facilities = soup.find(
         "table", class_="npi-record-list table table-hover"
     ).find_all("a")
@@ -106,10 +114,42 @@ def get_facilities_urls(url):
 def scrape_data(url):
     response = session.get(url, headers=random.choice(headers))
     soup = BeautifulSoup(response.text, "html.parser")
-    data = {"Company Name": soup.find("h1").text.strip(), "Type of Facility": "", "Description": "", "Address": "",
-            "City": "", "State": "", "Zip": "", "Phone": "", "Website": "", "Contact Name": "", "Contact phone": "",
-            "NPI Number": "", "LBN": "", "DBA": "", "Entity Type": "", "Enumeration Date": "", "Last Update Date": "",
-            "Organization Subpart": "", "Identifiers": {"State": "", "Type": "", "Number": "", "Issuer": ""}}
+    dom = etree.HTML(str(soup))
+    data = {"Company Name": soup.find("h1").text.strip(), "Health care specialties": [
+        ", ".join(
+            s.text
+            for s in soup.find("div", class_="panel panel-info npi-specialty").find_all(
+                "td"
+            )
+        )
+        for _ in soup.find("div", class_="panel panel-info npi-specialty").find_all(
+            "tr"
+        )
+    ], "Description": "", "Address": soup.find('span', class_='address'), "City": "", "State": "", "Zip": "", "Phone": "", "Website": "",
+            "Contact Name": "", "Contact phone": "", "NPI Number": "", "LBN": "", "DBA": "", "Entity Type": "",
+            "Enumeration Date": "", "Last Update Date": "", "Organization Subpart": "",
+            "Identifiers": {"State": "", "Type": "", "Number": "", "Issuer": ""}}
+    for _ in dom.xpath('//*[@id="content"]/div/div[1]/text()'):
+        if len(_) > 50:
+            data["Description"] = _.strip()
+    city_state_zip = soup.find("span", class_="citystate").text.split(" ")
+    data["City"] = ' '.join(city_state_zip[:-2])
+    data["State"] = city_state_zip[-2]
+    data["Zip"] = city_state_zip[-1]
+    data["Phone"] = soup.find("i", class_="fa fa-phone").text
+    data["Website"] = soup.find("i", class_="fa fa-globe").text
+    data["Contact Name"] = dom.xpath('//*[@id="content"]/div/div[1]/div[2]/div[2]/div[1]/div[6]/div[2]')[0].text[6:].strip()
+    data["Contact phone"] = dom.xpath('//*[@id="content"]/div/div[1]/div[2]/div[2]/div[1]/div[6]/div[3]/a')[0].text
+    additional_data = soup.find('div', class_='panel panel-info npi-other-info').find_all('td')
+    data["NPI Number"] = additional_data[1]
+    data["LBN"] = additional_data[2]
+    data["DBA"] = additional_data[3]
+    data["Entity Type"] = additional_data[4]
+    data["Enumeration Date"] = additional_data[6]
+    data["Last Update Date"] = additional_data[7]
+    data["Organization Subpart"] = additional_data[5]
+
+
 
 
 for url in types_of_facilities():

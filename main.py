@@ -1,3 +1,5 @@
+import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 from lxml import etree
@@ -112,45 +114,119 @@ def get_facilities_urls(url):
 
 
 def scrape_data(url):
-    response = session.get(url, headers=random.choice(headers))
+    response = session.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
     dom = etree.HTML(str(soup))
-    data = {"Company Name": soup.find("h1").text.strip(), "Health care specialties": [
-        ", ".join(
-            s.text
-            for s in soup.find("div", class_="panel panel-info npi-specialty").find_all(
-                "td"
-            )
-        )
-        for _ in soup.find("div", class_="panel panel-info npi-specialty").find_all(
-            "tr"
-        )
-    ], "Description": "", "Address": soup.find('span', class_='address'), "City": "", "State": "", "Zip": "", "Phone": "", "Website": "",
+    data = {"Company Name": '', "Health care specialties": [], "Description": "", "Address": '', "City": "", "State": "", "Zip": "", "Phone": "", "Website": "",
             "Contact Name": "", "Contact phone": "", "NPI Number": "", "LBN": "", "DBA": "", "Entity Type": "",
             "Enumeration Date": "", "Last Update Date": "", "Organization Subpart": "",
             "Identifiers": {"State": "", "Type": "", "Number": "", "Issuer": ""}}
-    for _ in dom.xpath('//*[@id="content"]/div/div[1]/text()'):
-        if len(_) > 50:
-            data["Description"] = _.strip()
-    city_state_zip = soup.find("span", class_="citystate").text.split(" ")
-    data["City"] = ' '.join(city_state_zip[:-2])
-    data["State"] = city_state_zip[-2]
-    data["Zip"] = city_state_zip[-1]
-    data["Phone"] = soup.find("i", class_="fa fa-phone").text
-    data["Website"] = soup.find("i", class_="fa fa-globe").text
-    data["Contact Name"] = dom.xpath('//*[@id="content"]/div/div[1]/div[2]/div[2]/div[1]/div[6]/div[2]')[0].text[6:].strip()
-    data["Contact phone"] = dom.xpath('//*[@id="content"]/div/div[1]/div[2]/div[2]/div[1]/div[6]/div[3]/a')[0].text
-    additional_data = soup.find('div', class_='panel panel-info npi-other-info').find_all('td')
-    data["NPI Number"] = additional_data[1]
-    data["LBN"] = additional_data[2]
-    data["DBA"] = additional_data[3]
-    data["Entity Type"] = additional_data[4]
-    data["Enumeration Date"] = additional_data[6]
-    data["Last Update Date"] = additional_data[7]
-    data["Organization Subpart"] = additional_data[5]
-
-
-
+    try:
+        data["Company Name"] = soup.find("h1").text.strip()
+    except:
+        pass
+    try:
+        for _ in dom.xpath('//*[@id="content"]/div/div[1]/text()'):
+            if len(_) > 50:
+                data["Description"] = _.strip()
+    except:
+        pass
+    try:
+        data["Address"] = soup.find('span', class_='address').text
+    except:
+        pass
+    try:
+        hcs = soup.find("div", class_="panel panel-info npi-specialty").find_all("tr")
+        for _ in hcs[1:]:
+            data["Health care specialties"].append(_.text.strip().split('\n'))
+    except:
+        pass
+    try:
+        city_state_zip = soup.find("span", class_="citystate").text.split(" ")
+    except:
+        pass
+    try:
+        data["City"] = ' '.join(city_state_zip[:-2])
+    except:
+        pass
+    try:
+        data["State"] = city_state_zip[-2]
+    except:
+        pass
+    try:
+        data["Zip"] = city_state_zip[-1]
+    except:
+        pass
+    try:
+        data["Phone"] = soup.find("i", class_="fa fa-phone").text
+    except:
+        pass
+    try:
+        data["Website"] = soup.find("i", class_="fa fa-globe").text
+    except:
+        pass
+    try:
+        data["Contact Name"] = dom.xpath('//*[@id="content"]/div/div[1]/div[2]/div[2]/div[1]/div[6]/div[2]')[0].text[6:].strip()
+    except:
+        pass
+    try:
+        data["Contact phone"] = dom.xpath('//*[@id="content"]/div/div[1]/div[2]/div[2]/div[1]/div[6]/div[3]/a')[0].text
+    except:
+        pass
+    try:
+        additional_data = soup.find('div', class_='panel panel-info npi-other-info').find_all('td')
+    except:
+        pass
+    try:
+        data["NPI Number"] = additional_data[0].text
+    except:
+        pass
+    try:
+        data["LBN"] = additional_data[1].text
+    except:
+        pass
+    try:
+        data["DBA"] = additional_data[2].text
+    except:
+        pass
+    try:
+        data["Entity Type"] = additional_data[3].text
+    except:
+        pass
+    try:
+        data["Enumeration Date"] = additional_data[5].text
+    except:
+        pass
+    try:
+        data["Last Update Date"] = additional_data[6].text
+    except:
+        pass
+    try:
+        data["Organization Subpart"] = additional_data[4].text
+    except:
+        pass
+    try:
+        identifiers = soup.find_all('tr', 'identifier')
+        for _ in identifiers:
+            id = _.text.strip('\n').split('\n')
+            try:
+                data['Identifiers']['State'] = id[0]
+            except:
+                pass
+            try:
+                data['Identifiers']['Type'] = id[1]
+            except:
+                pass
+            try:
+                data['Identifiers']['Number'] = id[2]
+            except:
+                pass
+            try:
+                data['Identifiers']['Issuer'] = id[3]
+            except:
+                pass
+    except:
+        pass
 
 for url in types_of_facilities():
     get_states_by_type(url)
@@ -177,3 +253,19 @@ while start < len(types_and_states):
                     print(len(list_of_facilities))
     except:
         types_and_states = types_and_states[start:]
+
+
+with ThreadPoolExecutor(20) as executor:
+    try:
+        futures = [executor.submit(scrape_data, url) for url in list_of_facilities]
+    except TypeError:
+        pass
+    for future in as_completed(futures):
+        position = 1
+        # page_data = future.result()
+        json_object = json.dumps(future.result(), indent=4)
+        with open('npino.json', 'a') as f:
+            f.write(json_object)
+        print(position)
+        position += 1
+

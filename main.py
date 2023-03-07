@@ -228,6 +228,8 @@ def scrape_data(url):
     except:
         pass
 
+    return data
+
 for url in types_of_facilities():
     get_states_by_type(url)
 
